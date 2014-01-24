@@ -4,13 +4,27 @@ import strtabs
 import streams
 import strutils
 
+proc isNimrodFile(file: string): bool =
+  var (dir, name, ext) = splitFile(item)
+  if ext == ".nim":
+    result = true
+  else:
+    result = false
+
 proc findNimrodFiles(baseDir: string): seq[string] =
   result = @[]
   for item in walkDirRec(baseDir):
     var (dir, name, ext) = splitFile(item)
     if ext == ".nim":
       result.add(item)
-      
+
+proc findDirectories(baseDir: string): seq[string] =
+  result = @[]
+  for kind, item in walkDir(baseDir):
+    if kind == pcDir:
+      result = result & item
+      result = result & findDirectories(item)
+
 proc createItemsList(items: openarray[string]): string =
   result = join(items, ";")
   
@@ -47,6 +61,10 @@ proc genDefaultPropertyGroup(mainfile: string): PXMLNode =
   var startupobject = newElement("StartupObject")
   startupobject.add(newText(mainfile))
   result.add(startupobject)
+  var nameelt = newElement("Name")
+  var (dir, name, ext) = splitFile(mainfile)
+  nameelt.add(newText(name))
+  result.add(nameelt)
   
 proc genConfigurationPropertyGroup(config: string, outputpath: string, flags: string): PXMLNode =
   result = newElement("PropertyGroup")
@@ -58,7 +76,8 @@ proc genConfigurationPropertyGroup(config: string, outputpath: string, flags: st
   var unmanageddebugging = newElement("EnableUnmanagedDebugging")
   debugsymbols.add(newText("true"))
   compilerflags.add(newText(flags))
-  outpath.add(newText(outputpath))
+  var winoutputpath = outputpath.replace(r"/",r"\")
+  outpath.add(newText(winoutputpath & r"\"))
   unmanageddebugging.add(newText("false"))
   result.add(debugsymbols)
   result.add(compilerflags)
@@ -68,14 +87,17 @@ proc genDebugPropertyGroup(): PXMLNode =
   result = genConfigurationPropertyGroup("Debug", "bin/Debug", "")
 proc genReleasePropertyGroup(): PXMLNode = 
   result = genConfigurationPropertyGroup("Release", "bin/Release", "")
-proc genItemGroup(paths: seq[string]): PXMLNode = 
+proc genItemGroup(elmType: string, paths: seq[string]): PXMLNode = 
   result = newElement("ItemGroup")
   for file in paths.items:
-    var toAdd = newElement("Content")
+    var toAdd = newElement(elmType)
     toAdd.attrs = newStringTable(modeCaseSensitive)
     toAdd.attrs["Include"] = file
     result.add(toAdd)
-
+proc genFolderItemGroup(paths: seq[string]): PXMLNode =
+  result = genItemGroup("Folder", paths)
+proc genContentItemGroup(paths: seq[string]): PXMLNode =
+  result = genItemGroup("Content", paths)
 proc genBuildTarget(): PXMLNode =
   result = newElement("Target")
   result.attrs = newStringTable(modeCaseSensitive)
@@ -89,10 +111,13 @@ proc genNimrodProject(baseModule: string): PXMLNode =
   result = genHeader()
   var (dir, name, ext) = splitFile(baseModule)
   var files = findNimrodFiles(dir)
+  var dirs = findDirectories(dir)
+  echo repr(dirs)
   result.add(genDefaultPropertyGroup(name & ext))
   result.add(genDebugPropertyGroup())
   result.add(genReleasePropertyGroup())
-  result.add(genItemGroup(files))
+  result.add(genContentItemGroup(files))
+  result.add(genFolderItemGroup(dirs))
   result.add(genBuildTarget())
   
 proc outputNimrodProject(baseModule: string) =
