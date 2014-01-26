@@ -5,7 +5,7 @@ import streams
 import strutils
 
 proc isNimrodFile(file: string): bool =
-  var (dir, name, ext) = splitFile(item)
+  var (dir, name, ext) = splitFile(file)
   if ext == ".nim":
     result = true
   else:
@@ -18,12 +18,23 @@ proc findNimrodFiles(baseDir: string): seq[string] =
     if ext == ".nim":
       result.add(item)
 
+
+proc findDirectoriesRec(baseDir: string): seq[string] = 
+  result = @[]
+  for kind, item in walkDir(baseDir):
+    if kind == pcDir:
+      result = result & findDirectoriesRec(item)
+    if kind == pcFile:
+      if splitFile(item).ext == ".nim":
+        result = result & baseDir
 proc findDirectories(baseDir: string): seq[string] =
   result = @[]
   for kind, item in walkDir(baseDir):
     if kind == pcDir:
-      result = result & item
-      result = result & findDirectories(item)
+      #we only want to return the subdirectories
+      #with nimrod items in them
+      result = result & findDirectoriesRec(item)
+  
 
 proc createItemsList(items: openarray[string]): string =
   result = join(items, ";")
@@ -83,10 +94,13 @@ proc genConfigurationPropertyGroup(config: string, outputpath: string, flags: st
   result.add(compilerflags)
   result.add(outpath)
   result.add(unmanageddebugging)
+
 proc genDebugPropertyGroup(): PXMLNode = 
   result = genConfigurationPropertyGroup("Debug", "bin/Debug", "")
+
 proc genReleasePropertyGroup(): PXMLNode = 
   result = genConfigurationPropertyGroup("Release", "bin/Release", "")
+
 proc genItemGroup(elmType: string, paths: seq[string]): PXMLNode = 
   result = newElement("ItemGroup")
   for file in paths.items:
