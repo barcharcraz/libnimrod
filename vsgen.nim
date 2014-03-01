@@ -47,6 +47,11 @@ proc genHeader(): PXMLNode =
   result.attrs["DefaultTargets"]="Build"
   result.attrs["xmlns"]=r"http://schemas.microsoft.com/developer/msbuild/2003"
   
+proc genImportNode(file: string): PXMLNode = 
+  result = newElement("Import")
+  result.attrs = newStringTable(modeCaseSensitive)
+  result.attrs["Project"] = file
+  
 proc genDefaultPropertyGroup(mainfile: string): PXMLNode =
   result = newElement("PropertyGroup")
   var configuration = newElement("Configuration")
@@ -118,16 +123,42 @@ proc genBuildTarget(): PXMLNode =
   result.attrs["Name"] = "Build"
   var execNode = newElement("Exec")
   execNode.attrs = newStringTable(modeCaseSensitive)
-  execNode.attrs["Command"] = r"nimrod c --passc:$(CompilerFlags) -d:$(Configuration) -o:$(OutputPath)$(AssemblyName) $(StartupObject) "
+  execNode.attrs["Command"] = """
+  call "%VS120COMNTOOLS%VCVarsQueryRegistry.bat" No32bit 64bit
+  call "%VCINSTALLDIR%vcvarsall.bat" amd64
+  nimrod c --cc:vcc --passc:""$(CompilerFlags)"" -d:$(Configuration) -o:$(OutputPath)$(AssemblyName) $(StartupObject) 
+  """
   result.add(execNode)
   
+proc genVCCImports(): PXMLNode =
+  result = newElement("Import")
+  result.attrs = newStringTable(modeCaseSensitive)
+  result.attrs["Project"] = r"$(VCTargetsPath)\Microsoft.Cpp.props"
+proc genVSPropSheetImport(): PXMLNode =
+  result = newElement("ImportGroup")
+  result.attrs = newStringTable(modeCaseSensitive)
+  result.attrs["Label"] = r"PropertySheets"
+  var importNode = newElement("Import")
+  importNode.attrs = newStringTable(modeCaseSensitive)
+  importNode.attrs["Project"] = r"$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+  importNode.attrs["Condition"] = r"exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+  importNode.attrs["Label"]=r"LocalAppDataPlatform"
+  result.add(importNode)
+proc genVCCTargetsImport(): PXMLNode =
+  result = genImportNode(r"$(VCTargetsPath)\Microsoft.Cpp.targets")
+proc genVCCDefaultTargets(): PXMLNode = 
+  result = genImportNode(r"$(VCTargetsPath)\Microsoft.Cpp.Default.props")
+
 proc genNimrodProject(baseModule: string): PXMLNode =
   result = genHeader()
   var (dir, name, ext) = splitFile(baseModule)
   var files = findNimrodFiles(dir)
   var dirs = findDirectories(dir)
   echo repr(dirs)
-  result.add(genDefaultPropertyGroup(name & ext))
+  result.add(genDefaultPropertyGroup(baseModule))
+  result.add(genVCCImports())
+  result.add(genVSPropSheetImport())
+  result.add(genVCCTargetsImport())
   result.add(genDebugPropertyGroup())
   result.add(genReleasePropertyGroup())
   result.add(genContentItemGroup(files))
